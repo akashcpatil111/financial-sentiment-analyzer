@@ -97,31 +97,37 @@ def fetch_headlines(query, max_articles=15):
 # ── Helper: Run sentiment analysis ──────────────────────────────────────────
 def analyze_sentiment(headlines):
     texts = [h["title"] for h in headlines]
-    
-    try:
-        response = requests.post(
-            HF_API_URL,
-            headers=HF_HEADERS,
-            json={"inputs": texts, "options": {"wait_for_model": True}}
-        )
-        results = response.json()
-        if isinstance(results, dict) and "error" in results:
-            raise Exception(results["error"])
-    except Exception as e:
-        # Fallback: assign neutral if API fails
-        results = [[{"label": "neutral", "score": 1.0}]] * len(texts)
 
     label_map = {"positive": "Positive", "negative": "Negative", "neutral": "Neutral"}
     color_map = {"Positive": "#2ecc71", "Negative": "#e74c3c", "Neutral": "#95a5a6"}
 
     enriched = []
-    for headline, result in zip(headlines, results):
-        if isinstance(result, list):
-            top   = max(result, key=lambda x: x["score"])
-            scores = {r["label"]: round(r["score"] * 100, 1) for r in result}
-        else:
+    for headline, text in zip(headlines, texts):
+        try:
+            response = requests.post(
+                HF_API_URL,
+                headers=HF_HEADERS,
+                json={"inputs": text, "options": {"wait_for_model": True}},
+                timeout=15
+            )
+            result = response.json()
+
+            # Handle all possible response formats from HF API
+            if isinstance(result, dict) and "error" in result:
+                raise Exception(result["error"])
+            elif isinstance(result, list) and len(result) > 0:
+                # [[{label, score}, ...]] → unwrap outer list
+                if isinstance(result[0], list):
+                    result = result[0]
+                # result is now [{label, score}, ...]
+                top    = max(result, key=lambda x: x["score"])
+                scores = {r["label"].lower(): round(r["score"] * 100, 1) for r in result}
+            else:
+                raise Exception("Unexpected response format")
+
+        except Exception:
             top    = {"label": "neutral", "score": 1.0}
-            scores = {"positive": 0, "negative": 0, "neutral": 100}
+            scores = {"positive": 0.0, "negative": 0.0, "neutral": 100.0}
 
         label = label_map.get(top["label"].lower(), "Neutral")
         enriched.append({

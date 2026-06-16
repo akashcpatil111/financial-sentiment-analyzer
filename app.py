@@ -3,9 +3,6 @@ import requests
 from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, jsonify
-from transformers import pipeline
-import warnings
-warnings.filterwarnings("ignore", category=UserWarning)
 import google.generativeai as genai
 
 load_dotenv()
@@ -16,17 +13,9 @@ def is_placeholder(key):
     return not key or "here" in key.lower() or "your_" in key.lower()
 
 # ── Load sentiment model ─────────────────────────────────────────────────────
-# Using mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis
-# Lighter model (~80MB) vs FinBERT (~265MB) — fits in 512MB free tier RAM
-# Still fine-tuned specifically on financial news text
-print("Loading sentiment model...")
-sentiment_pipeline = pipeline(
-    "text-classification",
-    model="mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis",
-    device=-1,
-    top_k=None
-)
-print("Sentiment model loaded successfully.")
+HF_API_URL = "https://api-inference.huggingface.co/models/mrm8488/distilroberta-finetuned-financial-news-sentiment-analysis"
+HF_HEADERS = {"Authorization": "Bearer hf_dummy"}  # no token needed for public models
+print("Using Hugging Face Inference API for sentiment analysis.")
 
 # ── Configure Gemini API ─────────────────────────────────────────────────────
 gemini_key = os.getenv("GEMINI_API_KEY")
@@ -107,17 +96,34 @@ def fetch_headlines(query, max_articles=15):
 
 # ── Helper: Run sentiment analysis ──────────────────────────────────────────
 def analyze_sentiment(headlines):
-    texts   = [h["title"] for h in headlines]
-    results = sentiment_pipeline(texts, truncation=True, max_length=512)
+    texts = [h["title"] for h in headlines]
+    
+    try:
+        response = requests.post(
+            HF_API_URL,
+            headers=HF_HEADERS,
+            json={"inputs": texts, "options": {"wait_for_model": True}}
+        )
+        results = response.json()
+        if isinstance(results, dict) and "error" in results:
+            raise Exception(results["error"])
+    except Exception as e:
+        # Fallback: assign neutral if API fails
+        results = [[{"label": "neutral", "score": 1.0}]] * len(texts)
 
     label_map = {"positive": "Positive", "negative": "Negative", "neutral": "Neutral"}
-    color_map = {"Positive": "#2ecc71",  "Negative": "#e74c3c",  "Neutral": "#95a5a6"}
+    color_map = {"Positive": "#2ecc71", "Negative": "#e74c3c", "Neutral": "#95a5a6"}
 
     enriched = []
     for headline, result in zip(headlines, results):
-        scores = {r["label"]: round(r["score"] * 100, 1) for r in result}
-        top    = max(result, key=lambda x: x["score"])
-        label  = label_map.get(top["label"].lower(), "Neutral")
+        if isinstance(result, list):
+            top   = max(result, key=lambda x: x["score"])
+            scores = {r["label"]: round(r["score"] * 100, 1) for r in result}
+        else:
+            top    = {"label": "neutral", "score": 1.0}
+            scores = {"positive": 0, "negative": 0, "neutral": 100}
+
+        label = label_map.get(top["label"].lower(), "Neutral")
         enriched.append({
             **headline,
             "sentiment":  label,

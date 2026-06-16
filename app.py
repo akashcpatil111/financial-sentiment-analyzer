@@ -4,7 +4,9 @@ from datetime import datetime, timedelta
 from dotenv import load_dotenv
 from flask import Flask, render_template, request, jsonify
 from transformers import pipeline
-from google import genai
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+import google.generativeai as genai
 
 load_dotenv()
 
@@ -29,9 +31,10 @@ print("Sentiment model loaded successfully.")
 # ── Configure Gemini API ─────────────────────────────────────────────────────
 gemini_key = os.getenv("GEMINI_API_KEY")
 if not is_placeholder(gemini_key):
-    gemini_client = genai.Client(api_key=gemini_key)
+    genai.configure(api_key=gemini_key)
+    gemini_model = genai.GenerativeModel("gemini-2.0-flash")
 else:
-    gemini_client = None
+    gemini_model = None
 
 NEWS_API_KEY = os.getenv("NEWS_API_KEY")
 NEWS_API_URL = "https://newsapi.org/v2/everything"
@@ -157,7 +160,7 @@ def compute_stats(enriched):
 
 # ── Helper: Gemini summary ───────────────────────────────────────────────────
 def generate_summary(company, enriched, stats):
-    if gemini_client is None:
+    if gemini_model is None:
         pos = stats['percentages']['Positive']
         neg = stats['percentages']['Negative']
         neu = stats['percentages']['Neutral']
@@ -181,9 +184,7 @@ def generate_summary(company, enriched, stats):
         f"{stats['percentages']['Neutral']}% Neutral.\n\nMarket Summary:"
     )
     try:
-        response = gemini_client.models.generate_content(
-            model="gemini-2.0-flash", contents=prompt
-        )
+        response = gemini_model.generate_content(prompt)
         return response.text.strip()
     except Exception as e:
         return f"Summary unavailable: {str(e)}"

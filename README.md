@@ -2,7 +2,7 @@
 
 A real-time financial news sentiment analysis dashboard powered by **FinBERT** (Hugging Face) and **Gemini API**. Enter any company name or stock ticker to instantly analyze recent news sentiment with AI-generated market summaries.
 
-🔗 **[Live Demo](https://financial-sentiment-analyzer-pgla.onrender.com/)** *(update with your Render URL)*
+🔗 **[Live Demo](https://financial-sentiment-analyzer-pgla.onrender.com/)** 
 
 ---
 
